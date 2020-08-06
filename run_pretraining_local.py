@@ -23,16 +23,12 @@ import modeling
 import optimization
 import tensorflow as tf
 import numpy as np
+from google.protobuf.json_format import MessageToJson
+from google.protobuf.json_format import Parse as parse_protobuf_json
 
 flags = tf.flags
 
 FLAGS = flags.FLAGS
-
-## Required parameters
-flags.DEFINE_string(
-    "bert_config_file", None,
-    "The config json file corresponding to the pre-trained BERT model. "
-    "This specifies the model architecture.")
 
 flags.DEFINE_integer(
     "max_seq_length", 128,
@@ -45,19 +41,18 @@ flags.DEFINE_integer(
     "Maximum number of masked LM predictions per sequence. "
     "Must match data generation.")
 
-flags.DEFINE_bool("do_train", False, "Whether to run training.")
+flags.DEFINE_bool("do_train", True, "Whether to run training.")
 
 flags.DEFINE_integer("train_batch_size", 32, "Total batch size for training.")
 
 flags.DEFINE_float("learning_rate", 5e-5, "The initial learning rate for Adam.")
 
-flags.DEFINE_integer("num_train_steps", 100000, "Number of training steps.")
+flags.DEFINE_integer("num_train_steps", 100, "Number of training steps.")
 
 flags.DEFINE_integer("num_warmup_steps", 10000, "Number of warmup steps.")
 
 def model_fn_builder(bert_config, learning_rate,
-                     num_train_steps, num_warmup_steps, use_tpu,
-                     use_one_hot_embeddings):
+                     num_train_steps, num_warmup_steps):
   """Returns `model_fn` closure for TPUEstimator."""
 
   def model_fn(features, labels, mode, params):  # pylint: disable=unused-argument
@@ -98,13 +93,13 @@ def model_fn_builder(bert_config, learning_rate,
 
     tvars = tf.trainable_variables()
 
-    tf.logging.info("**** Trainable Variables ****")
-    for var in tvars:
-      tf.logging.info("  name = %s, shape = %s", var.name, var.shape)
+    # tf.logging.info("**** Trainable Variables ****")
+    # for var in tvars:
+    #   tf.logging.info("  name = %s, shape = %s", var.name, var.shape)
 
     output_spec = None
     train_op = optimization.create_optimizer(
-        total_loss, learning_rate, num_train_steps, num_warmup_steps, use_tpu)
+        total_loss, learning_rate, num_train_steps, num_warmup_steps, False)
 
     return train_op
 
@@ -432,10 +427,10 @@ class TimelineSession:
     def should_stop(self):
         return self.sess.should_stop()
 
-def train_input_generator(labels):
+def train_input_generator(features):
   while True:
     feed_dict = {}
-    for input_name, tensor in labels.items():
+    for input_name, tensor in features.items():
       if "\'" in str(tensor.dtype):
         dtype_as_str = str(tensor.dtype).split("\'")[1]
       else:
@@ -447,30 +442,31 @@ def train_input_generator(labels):
 def main(_):
   tf.logging.set_verbosity(tf.logging.INFO)
 
-  bert_config = modeling.BertConfig.from_json_file(FLAGS.bert_config_file)
-
-  tf.gfile.MakeDirs(FLAGS.output_dir)
+  bert_config = modeling.BertConfig(256)
 
   model_fn = model_fn_builder(
       bert_config=bert_config,
       learning_rate=FLAGS.learning_rate,
       num_train_steps=FLAGS.num_train_steps,
       num_warmup_steps=FLAGS.num_warmup_steps)
+
+  max_seq_length = FLAGS.max_seq_length
+  max_predictions_per_seq = FLAGS.max_predictions_per_seq
   
   with tf.name_scope("input"):
-    input_ids = tf.placeholder(shape=[FLAGS.train_batch_size, max_seq_length], dtype=tf.int64)
-    input_mask = tf.placeholder(shape=[FLAGS.train_batch_size, max_seq_length], dtype=tf.int64)
-    segment_ids = tf.placeholder(shape=[FLAGS.train_batch_size, max_seq_length], dtype=tf.int64)
-    masked_lm_positions = tf.placeholder(shape=[FLAGS.train_batch_size, max_predictions_per_seq], dtype=tf.int64)
-    masked_lm_ids = tf.placeholder(shape=[FLAGS.train_batch_size, max_predictions_per_seq], dtype=tf.int64)
+    input_ids = tf.placeholder(shape=[FLAGS.train_batch_size, max_seq_length], dtype=tf.int32)
+    input_mask = tf.placeholder(shape=[FLAGS.train_batch_size, max_seq_length], dtype=tf.int32)
+    segment_ids = tf.placeholder(shape=[FLAGS.train_batch_size, max_seq_length], dtype=tf.int32)
+    masked_lm_positions = tf.placeholder(shape=[FLAGS.train_batch_size, max_predictions_per_seq], dtype=tf.int32)
+    masked_lm_ids = tf.placeholder(shape=[FLAGS.train_batch_size, max_predictions_per_seq], dtype=tf.int32)
     masked_lm_weights = tf.placeholder(shape=[FLAGS.train_batch_size, max_predictions_per_seq], dtype=tf.float32)
-    next_sentence_labels = tf.placeholder(shape[FLAGS.train_batch_size, 1], tf.int64)
+    next_sentence_labels = tf.placeholder(shape=[FLAGS.train_batch_size, 1], dtype=tf.int32)
 
-  labels = {"input_ids": input_ids, "input_mask": input_mask, "segment_ids": segment_ids,
+  features = {"input_ids": input_ids, "input_mask": input_mask, "segment_ids": segment_ids,
             "masked_lm_positions": masked_lm_positions, "masked_lm_ids": masked_lm_ids,
             "masked_lm_weights": masked_lm_weights, "next_sentence_labels": next_sentence_labels}
   
-  train_op = model_fn(labels, None, None)
+  train_op = model_fn(features, None, None, None)
 
   infer_shape_ops = add_infer_shape_ops()
 
@@ -482,19 +478,16 @@ def main(_):
 
         # Horovod: adjust number of steps based on number of GPUs.
         tf.train.StopAtStepHook(last_step=205),
-
-        tf.train.LoggingTensorHook(tensors={'step': global_step, 'loss': loss},
-                                   every_n_iter=10),
   ]
 
   config = tf.ConfigProto()
   config.gpu_options.allow_growth = True
   config.gpu_options.visible_device_list = str(0)
 
-  training_batch_generator = train_input_generator(labels)
+  training_batch_generator = train_input_generator(features)
 
   with tf.train.MonitoredTrainingSession(hooks=hooks, config=config) as mon_sess:
-    mon_sess = TimelineSession(mon_sess)
+    mon_sess = TimelineSession(mon_sess, infer_shape_ops)
     while not mon_sess.should_stop():
       # Run a training step synchronously.
       feed_dict = next(training_batch_generator)

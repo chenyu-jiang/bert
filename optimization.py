@@ -19,12 +19,18 @@ from __future__ import division
 from __future__ import print_function
 
 import re
+import os
+import json
 import tensorflow as tf
 import byteps.tensorflow as bps
+from google.protobuf.json_format import MessageToJson
+from google.protobuf.json_format import Parse as parse_protobuf_json
 
 def dump_computation_graph(trace_dir):
     graphdef = tf.compat.v1.get_default_graph().as_graph_def()
     graph_str = json.loads(MessageToJson(graphdef))
+    if not os.path.isdir(trace_dir):
+      os.makedirs(trace_dir)
     with open(os.path.join(trace_dir, "graph.json"), "w") as f:
         json.dump(graph_str, f, indent=4)
 
