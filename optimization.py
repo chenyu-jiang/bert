@@ -77,7 +77,7 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu):
       epsilon=1e-6,
       exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
     
-  if os.environ.get("USE_BYTEPS").upper() in ["1", "TRUE", "Y"]:
+  if os.environ.get("USE_BYTEPS") and os.environ.get("USE_BYTEPS").upper() in ["1", "TRUE", "Y"]:
     optimizer = bps.DistributedOptimizer(optimizer)
 
   tvars = tf.trainable_variables()
