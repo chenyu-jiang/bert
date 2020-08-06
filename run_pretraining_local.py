@@ -23,7 +23,6 @@ import modeling
 import optimization
 import tensorflow as tf
 import numpy as np
-import byteps.tensorflow as bps
 
 flags = tf.flags
 
@@ -304,7 +303,7 @@ class TimelineSession:
         self.feed_dict_meta = {}
         self.tensor_shape_ops = tensor_shape_ops
 
-        self.trace_dir = os.path.join(os.environ.get("BYTEPS_TRACE_DIR", "."), str(bps.local_rank()))
+        self.trace_dir = os.path.join(os.environ.get("BYTEPS_TRACE_DIR", "."), str(0))
         if not os.path.exists(self.trace_dir):
             os.makedirs(self.trace_dir)
         if os.environ.get("BYTEPS_TRACE_ON", "") != '1':
@@ -480,10 +479,9 @@ def main(_):
         # from rank 0 to all other processes. This is necessary to ensure consistent
         # initialization of all workers when training is started with random weights
         # or restored from a checkpoint.
-        bps.BroadcastGlobalVariablesHook(0),
 
         # Horovod: adjust number of steps based on number of GPUs.
-        tf.train.StopAtStepHook(last_step=205 // bps.size()),
+        tf.train.StopAtStepHook(last_step=205),
 
         tf.train.LoggingTensorHook(tensors={'step': global_step, 'loss': loss},
                                    every_n_iter=10),
@@ -491,7 +489,7 @@ def main(_):
 
   config = tf.ConfigProto()
   config.gpu_options.allow_growth = True
-  config.gpu_options.visible_device_list = str(bps.local_rank())
+  config.gpu_options.visible_device_list = str(0)
 
   training_batch_generator = train_input_generator(labels)
 

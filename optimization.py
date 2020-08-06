@@ -20,6 +20,13 @@ from __future__ import print_function
 
 import re
 import tensorflow as tf
+import byteps.tensorflow as bps
+
+def dump_computation_graph(trace_dir):
+    graphdef = tf.compat.v1.get_default_graph().as_graph_def()
+    graph_str = json.loads(MessageToJson(graphdef))
+    with open(os.path.join(trace_dir, "graph.json"), "w") as f:
+        json.dump(graph_str, f, indent=4)
 
 
 def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu):
@@ -63,15 +70,18 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu):
       beta_2=0.999,
       epsilon=1e-6,
       exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
-
-  if use_tpu:
-    optimizer = tf.contrib.tpu.CrossShardOptimizer(optimizer)
+    
+  if os.environ.get("USE_BYTEPS").upper() in ["1", "TRUE", "Y"]:
+    optimizer = bps.DistributedOptimizer(optimizer)
 
   tvars = tf.trainable_variables()
   grads = tf.gradients(loss, tvars)
 
   # This is how the model was pre-trained.
   (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
+
+  trace_dir = os.path.join(os.environ.get("BYTEPS_TRACE_DIR", "."), str(bps.local_rank()))
+  dump_computation_graph(trace_dir)
 
   train_op = optimizer.apply_gradients(
       zip(grads, tvars), global_step=global_step)
