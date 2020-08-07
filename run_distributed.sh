@@ -18,12 +18,13 @@ export BYTEPS_TRACE_END_STEP=20
 export BYTEPS_TRACE_DIR=./traces
 export BYTEPS_SERVER_LOG_PATH=./traces/server_log.txt
 export BYTEPS_KEY_DICT_PATH=./traces/key_dict.txt
-export NVIDIA_VISIBLE_DEVICES=0
+export NVIDIA_VISIBLE_DEVICES=1
 export DMLC_WORKER_ID=${RANK}
 export DMLC_NUM_WORKER=${NUM_WORKERS}
 export DMLC_NUM_SERVER=${NUM_SERVERS}
 export BYTEPS_RANK=${RANK}
 export BYTEPS_SIZE=${NUM_WORKERS}
+export USE_BYTEPS=1
 
 # start the scheduler
 export DMLC_PS_ROOT_URI='10.28.1.18'

@@ -441,11 +441,10 @@ def train_input_generator(features):
 
 
 def main(_):
+  bps.init()
   tf.logging.set_verbosity(tf.logging.INFO)
 
   bert_config = modeling.BertConfig(256)
-
-  tf.gfile.MakeDirs(FLAGS.output_dir)
 
   model_fn = model_fn_builder(
       bert_config=bert_config,
@@ -463,7 +462,7 @@ def main(_):
     masked_lm_positions = tf.placeholder(shape=[FLAGS.train_batch_size, max_predictions_per_seq], dtype=tf.int32)
     masked_lm_ids = tf.placeholder(shape=[FLAGS.train_batch_size, max_predictions_per_seq], dtype=tf.int32)
     masked_lm_weights = tf.placeholder(shape=[FLAGS.train_batch_size, max_predictions_per_seq], dtype=tf.float32)
-    next_sentence_labels = tf.placeholder(shape=shape[FLAGS.train_batch_size, 1], dtype=tf.int32)
+    next_sentence_labels = tf.placeholder(shape=[FLAGS.train_batch_size, 1], dtype=tf.int32)
 
   features = {"input_ids": input_ids, "input_mask": input_mask, "segment_ids": segment_ids,
             "masked_lm_positions": masked_lm_positions, "masked_lm_ids": masked_lm_ids,
